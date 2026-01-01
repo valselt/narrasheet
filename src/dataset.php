@@ -25,47 +25,60 @@ if (isset($_GET['action_type']) && $_GET['action_type'] === 'get_tags') {
     exit();
 }
 
-// --- 2. FUNGSI HELPER TAGS (JSON Aware) ---
-function handleTags($conn, $itemId, $tagsJson, $userEmail, $type = 'dataset') {
+// --- 2. HELPER: HANDLE TAGS (Dengan Auto-Cleanup) ---
+function handleTags($conn, $itemId, $tagsJson, $userEmail, $type = 'paper') {
     $tableRel = ($type === 'paper') ? 'paper_tags' : 'dataset_tags';
     $colID = ($type === 'paper') ? 'paper_id' : 'dataset_id';
 
+    // 1. Hapus semua relasi lama item ini
     $stmt_del = $conn->prepare("DELETE FROM $tableRel WHERE $colID = ?");
     $stmt_del->bind_param("i", $itemId);
     $stmt_del->execute();
 
-    if (empty($tagsJson)) return;
-
-    $tagsArray = json_decode($tagsJson, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        $raw = explode(',', $tagsJson);
-        $tagsArray = [];
-        foreach($raw as $r) $tagsArray[] = ['value' => trim($r)];
-    }
-
-    foreach ($tagsArray as $tagItem) {
-        if (!isset($tagItem['value'])) continue;
-        $tagName = trim(strtolower($tagItem['value']));
-        if (empty($tagName)) continue;
-
-        $stmt_check = $conn->prepare("SELECT id FROM tags WHERE tag_name = ? AND user_email = ?");
-        $stmt_check->bind_param("ss", $tagName, $userEmail);
-        $stmt_check->execute();
-        $res = $stmt_check->get_result();
-        
-        if ($res->num_rows > 0) {
-            $tagId = $res->fetch_assoc()['id'];
-        } else {
-            $stmt_ins = $conn->prepare("INSERT INTO tags (user_email, tag_name) VALUES (?, ?)");
-            $stmt_ins->bind_param("ss", $userEmail, $tagName);
-            $stmt_ins->execute();
-            $tagId = $stmt_ins->insert_id;
+    // 2. Jika ada tags baru, masukkan kembali
+    if (!empty($tagsJson)) {
+        $tagsArray = json_decode($tagsJson, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $raw = explode(',', $tagsJson);
+            $tagsArray = [];
+            foreach($raw as $r) $tagsArray[] = ['value' => trim($r)];
         }
 
-        $stmt_link = $conn->prepare("INSERT INTO $tableRel ($colID, tag_id) VALUES (?, ?)");
-        $stmt_link->bind_param("ii", $itemId, $tagId);
-        $stmt_link->execute();
+        foreach ($tagsArray as $tagItem) {
+            if (!isset($tagItem['value'])) continue;
+            $tagName = trim(strtolower($tagItem['value']));
+            if (empty($tagName)) continue;
+
+            // Cek apakah tag sudah ada
+            $stmt_check = $conn->prepare("SELECT id FROM tags WHERE tag_name = ? AND user_email = ?");
+            $stmt_check->bind_param("ss", $tagName, $userEmail);
+            $stmt_check->execute();
+            $res = $stmt_check->get_result();
+
+            if ($res->num_rows > 0) {
+                $tagId = $res->fetch_assoc()['id'];
+            } else {
+                // Buat tag baru jika belum ada
+                $stmt_ins = $conn->prepare("INSERT INTO tags (user_email, tag_name) VALUES (?, ?)");
+                $stmt_ins->bind_param("ss", $userEmail, $tagName);
+                $stmt_ins->execute();
+                $tagId = $stmt_ins->insert_id;
+            }
+
+            // Sambungkan relasi
+            $stmt_link = $conn->prepare("INSERT INTO $tableRel ($colID, tag_id) VALUES (?, ?)");
+            $stmt_link->bind_param("ii", $itemId, $tagId);
+            $stmt_link->execute();
+        }
     }
+
+    // 3. CLEANUP: Hapus tags yang sudah tidak dipakai di manapun
+    // Logic: Hapus dari tabel 'tags' jika ID-nya TIDAK ADA di 'paper_tags' DAN TIDAK ADA di 'dataset_tags'
+    $cleanupSql = "DELETE t FROM tags t 
+                   LEFT JOIN paper_tags pt ON t.id = pt.tag_id 
+                   LEFT JOIN dataset_tags dt ON t.id = dt.tag_id 
+                   WHERE pt.tag_id IS NULL AND dt.tag_id IS NULL";
+    $conn->query($cleanupSql);
 }
 
 // --- 3. LOGIC CRUD ---
@@ -76,7 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = $_POST['dataset_id'];
         $stmt = $conn->prepare("DELETE FROM datasets WHERE id=? AND user_email=?");
         $stmt->bind_param("is", $id, $email);
-        if ($stmt->execute()) header("Location: dataset?success=delete");
+        if ($stmt->execute()) {
+            // --- TAMBAHAN CLEANUP ---
+            $conn->query("DELETE t FROM tags t LEFT JOIN paper_tags pt ON t.id = pt.tag_id LEFT JOIN dataset_tags dt ON t.id = dt.tag_id WHERE pt.tag_id IS NULL AND dt.tag_id IS NULL");
+            // ------------------------
+            header("Location: dataset?success=delete");
+        }
         exit();
     }
     elseif ($action === 'archive') {

@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Service Website Utama (Apache + PHP)
   web:
     build: .
     ports:
@@ -9,3 +10,18 @@ services:
       - ./src:/var/www/html
     container_name: narrasheet_app
     restart: unless-stopped
+    # Tambahkan env_file agar bisa baca .env jika diperlukan diluar logic PHP
+    # env_file: ./src/.env 
+
+  # Service Pembersih (PHP CLI Daemon)
+  worker:
+    build: .
+    # Tidak perlu ports karena ini berjalan di background
+    volumes:
+      - ./src:/var/www/html
+    container_name: narrasheet_worker
+    # Perintah ini menimpa perintah default Apache
+    command: php /var/www/html/cleanup_daemon.php
+    restart: unless-stopped
+    depends_on:
+      - web

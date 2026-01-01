@@ -96,7 +96,12 @@ if ($view_mode === 'detail') {
             }
         }
     </script>
-    <style> body { font-family: 'Inter Tight', sans-serif; } h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; } </style>
+    <style> 
+        body { font-family: 'Inter Tight', sans-serif; } 
+        h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; } 
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
 </head>
 <body class="bg-gray-50 text-slate-800">
 
@@ -210,20 +215,44 @@ if ($view_mode === 'detail') {
                 <?php if($papers->num_rows > 0): ?>
                     <?php while($row = $papers->fetch_assoc()): ?>
                         <?php 
-                            $js_id = $row['id']; 
+                            // Prepare Variables for Popup (updated for new fields & json author)
                             $js_title = htmlspecialchars($row['title'], ENT_QUOTES); 
-                            $js_author = htmlspecialchars($row['author'], ENT_QUOTES); 
-                            $js_doi = htmlspecialchars($row['doi'], ENT_QUOTES); 
-                            $js_link_paper = htmlspecialchars($row['link_paper'], ENT_QUOTES); 
+                            $js_author_raw = htmlspecialchars($row['author'], ENT_QUOTES); // Pass raw JSON to JS
+                            $js_doi = htmlspecialchars($row['doi'] ?? '', ENT_QUOTES); 
+                            $js_link_paper = htmlspecialchars($row['link_paper'] ?? '', ENT_QUOTES); 
                             $js_link_upload = htmlspecialchars($row['link_upload'] ?? '', ENT_QUOTES); 
-                            $js_real_name = htmlspecialchars($row['real_name_file'] ?? basename($row['link_upload'] ?? ''), ENT_QUOTES);
                             $js_journal = htmlspecialchars($row['journal_name'] ?? '', ENT_QUOTES);
                             $js_year = htmlspecialchars($row['publish_year'] ?? '', ENT_QUOTES);
+                            $js_volume = htmlspecialchars($row['volume'] ?? '', ENT_QUOTES);
+                            $js_p_start = htmlspecialchars($row['page_start'] ?? '', ENT_QUOTES);
+                            $js_p_end = htmlspecialchars($row['page_end'] ?? '', ENT_QUOTES);
                             $js_publisher = htmlspecialchars($row['publisher'] ?? '', ENT_QUOTES);
+                            $js_abstract = htmlspecialchars($row['abstract'] ?? '', ENT_QUOTES);
                             
                             $has_pdf = !empty($row['link_upload']);
+
+                            // Handle Author Display (Card View)
+                            $rawAuthor = $row['author'];
+                            $authorsArray = json_decode($rawAuthor, true);
+                            $authorDisplay = "";
+                            if (json_last_error() === JSON_ERROR_NONE && is_array($authorsArray)) {
+                                $tempArr = [];
+                                foreach($authorsArray as $au) {
+                                    $f = isset($au['first']) ? trim($au['first']) : '';
+                                    $l = isset($au['last']) ? trim($au['last']) : '';
+                                    if($l) {
+                                        $initial = $f ? substr($f, 0, 1) . '.' : '';
+                                        $tempArr[] = "$l, $initial"; 
+                                    } else {
+                                         $tempArr[] = $f;
+                                    }
+                                }
+                                $authorDisplay = htmlspecialchars(implode(", ", $tempArr));
+                            } else {
+                                $authorDisplay = htmlspecialchars($rawAuthor);
+                            }
                         ?>
-                        <div onclick="showPaperPopup('<?php echo $js_title; ?>', '<?php echo $js_author; ?>', '<?php echo $js_doi; ?>', '<?php echo $js_link_paper; ?>', '<?php echo $js_link_upload; ?>', '<?php echo $js_journal; ?>', '<?php echo $js_year; ?>', '<?php echo $js_publisher; ?>')" 
+                        <div onclick="showPaperPopup('<?php echo $js_title; ?>', '<?php echo $js_author_raw; ?>', '<?php echo $js_doi; ?>', '<?php echo $js_link_paper; ?>', '<?php echo $js_link_upload; ?>', '<?php echo $js_journal; ?>', '<?php echo $js_year; ?>', '<?php echo $js_volume; ?>', '<?php echo $js_p_start; ?>', '<?php echo $js_p_end; ?>', '<?php echo $js_publisher; ?>', '<?php echo $js_abstract; ?>')" 
                              class="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition duration-300 p-4 flex flex-col h-full group cursor-pointer">
                             <div class="flex justify-between items-start mb-2">
                                 <h3 class="font-bold text-slate-800 text-md leading-tight line-clamp-2 group-hover:text-blue-600 transition"><?php echo htmlspecialchars($row['title']); ?></h3>
@@ -231,7 +260,7 @@ if ($view_mode === 'detail') {
                                     <div class="w-6 h-6 rounded bg-red-50 text-red-600 flex items-center justify-center shrink-0"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
                                 <?php endif; ?>
                             </div>
-                            <p class="text-xs text-slate-500 mb-4 line-clamp-1"><?php echo htmlspecialchars($row['author']); ?></p>
+                            <p class="text-xs text-slate-500 mb-4 line-clamp-1"><?php echo $authorDisplay; ?></p>
                             <div class="mt-auto pt-3 border-t border-gray-50 flex justify-between items-center">
                                 <span class="text-[10px] text-gray-400 font-mono"><?php echo $row['publish_year']; ?></span>
                                 <span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Detail</span>
@@ -314,7 +343,7 @@ if ($view_mode === 'detail') {
             if(modalPanel) { modalPanel.classList.remove('sm:max-w-6xl'); modalPanel.classList.add('sm:max-w-lg'); }
         }
 
-        // --- COPY FIX FOR MOBILE (Using opacity-100 lg:opacity-0 logic) ---
+        // --- COPY LOGIC ---
         function copyCode(btn) {
             navigator.clipboard.writeText(btn.nextElementSibling.innerText).then(() => { 
                 const original = btn.innerHTML; 
@@ -324,16 +353,46 @@ if ($view_mode === 'detail') {
         }
 
         // --- POPUP PAPER ---
-        function showPaperPopup(title, author, doi, link_paper, link_upload, journal, year, publisher) {
+        function showPaperPopup(title, authorRaw, doi, link_paper, link_upload, journal, year, volume, p_start, p_end, publisher, abstract) {
             resetModalSize();
             const headerActions = document.getElementById('modalHeaderActions');
             if(headerActions) headerActions.innerHTML = ''; 
 
-            const bibtex = `@article{${author.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '')}_paper,\n  title={${title}},\n  author={${author}},\n  journal={${journal}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
+            // Format Pages
+            let pagesDisplay = "";
+            if(p_start && p_end) pagesDisplay = `${p_start}-${p_end}`;
+            else if(p_start) pagesDisplay = p_start;
+            
+            // Format BibTeX Pages
+            let pagesBib = "";
+            if(p_start && p_end) pagesBib = `${p_start}--${p_end}`;
+            else if(p_start) pagesBib = p_start;
+
+            // Format Authors untuk Bibtex & APA
+            let authBib = "Unknown";
+            let authAPA = "Unknown";
+            try {
+                if (authorRaw.startsWith('[') || authorRaw.startsWith('{')) {
+                    const parsed = JSON.parse(authorRaw);
+                    authBib = parsed.map(a => `${a.last}, ${a.first}`).join(' and ');
+                    authAPA = parsed.map(a => {
+                        const init = a.first ? a.first[0] + '.' : '';
+                        return `${a.last}, ${init}`;
+                    }).join(' & ');
+                } else {
+                    authBib = authorRaw;
+                    authAPA = authorRaw;
+                }
+            } catch(e) { authBib = authorRaw; authAPA = authorRaw; }
+
+            const bibtex = `@article{${authBib.split(',')[0].toLowerCase().replace(/[^a-z]/g, '')}_${year},\n  title={${title}},\n  author={${authBib}},\n  journal={${journal}},\n  volume={${volume}},\n  pages={${pagesBib}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
+            
             const apaYear = year ? `(${year})` : '(n.d.)';
             const apaJournal = journal ? `<span class="italic">${journal}</span>` : '';
+            const apaVol = volume ? `, <span class="italic">${volume}</span>` : '';
+            const apaPage = pagesDisplay ? `, ${pagesDisplay}` : '';
             const apaDoi = doi ? ` https://doi.org/${doi}` : (link_paper ? ` ${link_paper}` : '');
-            const apaText = `${author}. ${apaYear}. ${title}. ${apaJournal}${apaJournal ? '.' : ''}${apaDoi}`;
+            const apaText = `${authAPA} ${apaYear}. ${title}. ${apaJournal}${apaVol}${apaPage}.${apaDoi}`;
 
             let actionButtons = '';
             if (doi) actionButtons += `<a href="https://doi.org/${doi}" target="_blank" class="flex-1 flex items-center justify-center py-3 rounded-xl bg-white text-slate-700 font-bold hover:bg-gray-50 transition shadow-sm border border-gray-300">DOI</a>`;
@@ -342,10 +401,12 @@ if ($view_mode === 'detail') {
             const buttonContainer = actionButtons ? `<div class="flex flex-col lg:flex-row gap-3 mb-6 w-full">${actionButtons}</div>` : '';
 
             let metaHtml = `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Judul</label><p class="text-slate-800 font-medium text-lg leading-tight">${title}</p></div>`;
-            metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${author}</p></div>`;
-            if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal / Konferensi</label><p class="text-slate-800 font-medium text-sm">${journal} ${year ? `(${year})` : ''}</p></div>`;
+            metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${authAPA}</p></div>`;
+            
+            if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal</label><p class="text-slate-800 font-medium text-sm">${journal} ${volume ? `Vol. ${volume}` : ''} ${pagesDisplay ? `pp. ${pagesDisplay}` : ''}</p></div>`;
+            
+            if(abstract) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Abstract</label><p class="text-slate-600 font-body text-sm leading-relaxed text-justify bg-slate-50 p-3 rounded-lg border border-gray-100 max-h-40 overflow-y-auto">${abstract}</p></div>`;
 
-            // Updated Citation HTML with Mobile Visibility Fix
             const citationHtml = `
             <div class="pt-4 border-t border-gray-100">
                 <div class="mb-4">
@@ -379,13 +440,13 @@ if ($view_mode === 'detail') {
                 const match = link.match(/kaggle\.com\/datasets\/([^\/]+\/[^\/?]+)/);
                 if (match && match[1]) {
                     const datasetId = match[1];
-                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (KaggleHub)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>import kagglehub\n# Download latest version\npath = kagglehub.dataset_download("${datasetId}")\nprint("Path to dataset files:", path)</code></pre></div></div>`;
+                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (KaggleHub)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>import kagglehub\n# Download latest version\npath = kagglehub.dataset_download("${datasetId}")\nprint("Path to dataset files:", path)</code></pre></div></div>`;
                 }
             } else if (jenis === 'huggingface') {
                 const match = link.match(/huggingface\.co\/datasets\/([^\/]+\/[^\/?]+)/);
                 if (match && match[1]) {
                     const datasetId = match[1];
-                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`;
+                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-5 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`;
                 }
             }
 

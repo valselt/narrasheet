@@ -161,6 +161,7 @@ if ($is_logged_in) {
                             $badge_class = $is_dataset ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-purple-50 text-purple-700 border-purple-100';
                             
                             if ($is_dataset) {
+                                // --- DATASET LOGIC ---
                                 $title_display = htmlspecialchars($data['nama_dataset']);
                                 $sub_display = htmlspecialchars($data['link_dataset']);
                                 $icon_url = match($data['jenis_dataset']) { 'kaggle' => 'https://cdn.simpleicons.org/kaggle/20BEFF', 'huggingface' => 'https://cdn.simpleicons.org/huggingface/FFD21E', 'openml' => 'https://cdn.ivanaldorino.web.id/narrasheet/openml.svg', default => null };
@@ -169,11 +170,34 @@ if ($is_logged_in) {
                                 $js_jenis = htmlspecialchars($data['jenis_dataset'], ENT_QUOTES);
                                 $onclick = "showDetail('$js_nama', '$js_link', '$js_jenis')";
                             } else {
+                                // --- PAPER LOGIC (UPDATED FOR JSON AUTHORS) ---
                                 $title_display = htmlspecialchars($data['title']);
-                                $sub_display = htmlspecialchars($data['author']);
+                                
+                                // Parse JSON Author untuk Tampilan Card (misal: Doe, J.)
+                                $rawAuthor = $data['author'];
+                                $authorsArray = json_decode($rawAuthor, true);
+                                if (json_last_error() === JSON_ERROR_NONE && is_array($authorsArray)) {
+                                    $tempArr = [];
+                                    foreach($authorsArray as $au) {
+                                        $f = isset($au['first']) ? trim($au['first']) : '';
+                                        $l = isset($au['last']) ? trim($au['last']) : '';
+                                        if($l) {
+                                            $initial = $f ? substr($f, 0, 1) . '.' : '';
+                                            $tempArr[] = "$l, $initial"; 
+                                        } else {
+                                             $tempArr[] = $f;
+                                        }
+                                    }
+                                    $sub_display = htmlspecialchars(implode(", ", $tempArr));
+                                } else {
+                                    $sub_display = htmlspecialchars($rawAuthor);
+                                }
+
                                 $icon_url = null;
+                                
+                                // Variables for Popup (Pass raw JSON author)
                                 $js_title = htmlspecialchars($data['title'], ENT_QUOTES);
-                                $js_author = htmlspecialchars($data['author'], ENT_QUOTES);
+                                $js_author = htmlspecialchars($data['author'], ENT_QUOTES); // Raw JSON for script
                                 $js_doi = htmlspecialchars($data['doi'] ?? '', ENT_QUOTES);
                                 $js_link_paper = htmlspecialchars($data['link_paper'] ?? '', ENT_QUOTES);
                                 $js_link_upload = htmlspecialchars($data['link_upload'] ?? '', ENT_QUOTES);
@@ -285,10 +309,26 @@ if ($is_logged_in) {
             if(modalTarget) { modalTarget.innerHTML = formContent; setupAutoFillListener(modalTarget); }
             openModal('Tambah Dataset Baru');
         }
+        
         function copyCode(btn) {
+            // Logic copy code (termasuk fix mobile)
             const codeContainer = btn.nextElementSibling;
-            if (codeContainer) { navigator.clipboard.writeText(codeContainer.innerText).then(() => { const originalIcon = btn.innerHTML; btn.innerHTML = `<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`; setTimeout(() => { btn.innerHTML = originalIcon; }, 2000); }); }
+            if (codeContainer) { 
+                navigator.clipboard.writeText(codeContainer.innerText).then(() => { 
+                    const originalIcon = btn.innerHTML; 
+                    btn.innerHTML = `<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`; 
+                    setTimeout(() => { btn.innerHTML = originalIcon; }, 2000); 
+                }); 
+            } else {
+                // Fallback jika tidak ada sibling (untuk button copy di popup paper)
+                navigator.clipboard.writeText(btn.nextElementSibling?.innerText || btn.parentNode.querySelector('div, pre').innerText).then(() => { 
+                    const original = btn.innerHTML; 
+                    btn.innerHTML = `<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`; 
+                    setTimeout(() => { btn.innerHTML = original; }, 2000); 
+                });
+            }
         }
+
         function showDetail(nama, link, jenis) {
             const headerActions = document.getElementById('modalHeaderActions');
             if(headerActions) headerActions.innerHTML = ''; 
@@ -298,7 +338,7 @@ if ($is_logged_in) {
                 if (match && match[1]) { const datasetId = match[1]; caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (KaggleHub)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>import kagglehub\n# Download latest version\npath = kagglehub.dataset_download("${datasetId}")\nprint("Path to dataset files:", path)</code></pre></div></div>`; }
             } else if (jenis === 'huggingface') {
                 const match = link.match(/huggingface\.co\/datasets\/([^\/]+\/[^\/?]+)/);
-                if (match && match[1]) { const datasetId = match[1]; caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`; }
+                if (match && match[1]) { const datasetId = match[1]; caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-5 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`; }
             }
             const detailHtml = `<div class="text-left space-y-5"><div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Nama Dataset</label><p class="text-slate-800 font-medium text-lg leading-tight break-words font-body">${nama}</p></div><div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Link Dataset</label><a href="${link}" target="_blank" class="text-blue-600 hover:underline text-sm break-all flex items-center gap-1 font-body">${link}<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></a></div>${caraPakaiHtml}</div>`;
             document.getElementById('modalContent').innerHTML = detailHtml;
@@ -310,17 +350,37 @@ if ($is_logged_in) {
             if(modalPanel) { modalPanel.classList.remove('sm:max-w-6xl'); modalPanel.classList.add('sm:max-w-lg'); }
         }
 
-        // --- FUNGSI POPUP PAPER ---
-        function showPaperPopup(title, author, doi, link_paper, link_upload, journal, year, publisher) {
+        // --- FUNGSI POPUP PAPER (UPDATED) ---
+        function showPaperPopup(title, authorRaw, doi, link_paper, link_upload, journal, year, publisher) {
             resetModalSize();
             const headerActions = document.getElementById('modalHeaderActions');
             if(headerActions) headerActions.innerHTML = ''; 
 
-            const bibtex = `@article{${author.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '')}_paper,\n  title={${title}},\n  author={${author}},\n  journal={${journal}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
+            // Format Authors untuk Bibtex & APA
+            let authBib = "Unknown";
+            let authAPA = "Unknown";
+            try {
+                // Cek apakah JSON string
+                if (authorRaw.startsWith('[') || authorRaw.startsWith('{')) {
+                    const parsed = JSON.parse(authorRaw);
+                    // Bibtex: Last, First and Last, First
+                    authBib = parsed.map(a => `${a.last}, ${a.first}`).join(' and ');
+                    // APA: Last, F. & Last, F.
+                    authAPA = parsed.map(a => {
+                        const init = a.first ? a.first[0] + '.' : '';
+                        return `${a.last}, ${init}`;
+                    }).join(' & ');
+                } else {
+                    authBib = authorRaw;
+                    authAPA = authorRaw;
+                }
+            } catch(e) { authBib = authorRaw; authAPA = authorRaw; }
+
+            const bibtex = `@article{${authBib.split(',')[0].toLowerCase().replace(/[^a-z]/g, '')}_paper,\n  title={${title}},\n  author={${authBib}},\n  journal={${journal}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
             const apaYear = year ? `(${year})` : '(n.d.)';
             const apaJournal = journal ? `<span class="italic">${journal}</span>` : '';
             const apaDoi = doi ? ` https://doi.org/${doi}` : (link_paper ? ` ${link_paper}` : '');
-            const apaText = `${author}. ${apaYear}. ${title}. ${apaJournal}${apaJournal ? '.' : ''}${apaDoi}`;
+            const apaText = `${authAPA} ${apaYear}. ${title}. ${apaJournal}${apaJournal ? '.' : ''}${apaDoi}`;
 
             let actionButtons = '';
             if (doi) actionButtons += `<a href="https://doi.org/${doi}" target="_blank" class="flex-1 flex items-center justify-center py-3 rounded-xl bg-white text-slate-700 font-bold hover:bg-gray-50 transition shadow-sm border border-gray-300">DOI</a>`;
@@ -329,7 +389,7 @@ if ($is_logged_in) {
             const buttonContainer = actionButtons ? `<div class="flex flex-col lg:flex-row gap-3 mb-6 w-full">${actionButtons}</div>` : '';
 
             let metaHtml = `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Judul</label><p class="text-slate-800 font-medium text-lg leading-tight">${title}</p></div>`;
-            metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${author}</p></div>`;
+            metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${authAPA}</p></div>`;
             if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal / Konferensi</label><p class="text-slate-800 font-medium text-sm">${journal} ${year ? `(${year})` : ''}</p></div>`;
 
             const citationHtml = `
