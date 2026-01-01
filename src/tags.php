@@ -10,6 +10,63 @@ if (!isset($_SESSION['user'])) {
 $user = $_SESSION['user'];
 $email = $user['email'] ?? 'unknown';
 
+// --- LOGIC: CRUD TAGS ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action_type'] ?? '';
+
+    // 1. UPDATE NAMA TAG
+    if ($action === 'update_tag') {
+        $id = $_POST['tag_id'];
+        $newName = trim($_POST['tag_name']);
+        
+        if (!empty($newName)) {
+            // Cek duplikat nama (kecuali diri sendiri)
+            $stmt_check = $conn->prepare("SELECT id FROM tags WHERE tag_name = ? AND user_email = ? AND id != ?");
+            $stmt_check->bind_param("ssi", $newName, $email, $id);
+            $stmt_check->execute();
+            if ($stmt_check->get_result()->num_rows > 0) {
+                header("Location: tags.php?id=$id&error=" . urlencode("Nama tag sudah ada!"));
+                exit();
+            }
+
+            $stmt = $conn->prepare("UPDATE tags SET tag_name = ? WHERE id = ? AND user_email = ?");
+            $stmt->bind_param("sis", $newName, $id, $email);
+            if ($stmt->execute()) {
+                header("Location: tags.php?id=$id&success=update");
+                exit();
+            }
+        }
+    }
+    // 2. HAPUS FOLDER TAG (FIXED)
+    elseif ($action === 'delete_tag') {
+        $id = $_POST['tag_id'];
+
+        if (!empty($id)) {
+            // Langkah 1: Hapus relasi di paper_tags & dataset_tags secara manual (Safety measure)
+            // Ini memastikan tag terhapus meskipun Foreign Key Constraint bermasalah
+            $stmt_clean_p = $conn->prepare("DELETE FROM paper_tags WHERE tag_id = ?");
+            $stmt_clean_p->bind_param("i", $id);
+            $stmt_clean_p->execute();
+
+            $stmt_clean_d = $conn->prepare("DELETE FROM dataset_tags WHERE tag_id = ?");
+            $stmt_clean_d->bind_param("i", $id);
+            $stmt_clean_d->execute();
+
+            // Langkah 2: Hapus Tag itu sendiri
+            $stmt = $conn->prepare("DELETE FROM tags WHERE id = ? AND user_email = ?");
+            $stmt->bind_param("is", $id, $email);
+            
+            if ($stmt->execute()) {
+                header("Location: tags.php?success=delete"); 
+                exit();
+            } else {
+                header("Location: tags.php?id=$id&error=Gagal menghapus tag");
+                exit();
+            }
+        }
+    }
+}
+
 // --- LOGIC: TENTUKAN MODE (LIST vs DETAIL) ---
 $tag_id = $_GET['id'] ?? null;
 $view_mode = $tag_id ? 'detail' : 'list';
@@ -144,6 +201,11 @@ if ($view_mode === 'detail') {
     <div class="container mx-auto px-6 py-10">
 
         <?php if ($view_mode === 'list'): ?>
+            
+            <?php if(isset($_GET['success']) && $_GET['success'] == 'delete'): ?>
+                <div id="successAlert" class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium mb-6 flex items-center gap-2 transition-opacity duration-500 ease-out opacity-100 font-body"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>Folder tag berhasil dihapus.</div>
+            <?php endif; ?>
+
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <div>
                     <h1 class="text-3xl font-bold text-slate-900 font-heading">Folder Tags</h1>
@@ -187,16 +249,28 @@ if ($view_mode === 'detail') {
 
         <?php else: ?>
             
+            <?php if(isset($_GET['error'])): ?>
+                <div id="errorAlert" class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium mb-6 flex items-center gap-2 transition-opacity duration-500 ease-out opacity-100 font-body"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><?php echo htmlspecialchars($_GET['error']); ?></div>
+            <?php endif; ?>
+            <?php if(isset($_GET['success']) && $_GET['success'] == 'update'): ?>
+                <div id="successAlert" class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-medium mb-6 flex items-center gap-2 transition-opacity duration-500 ease-out opacity-100 font-body"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Nama folder berhasil diperbarui.</div>
+            <?php endif; ?>
+
             <div class="flex items-center gap-4 mb-8 animate-fade-in-up">
                 <a href="tags" class="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:border-blue-200 transition shadow-sm group">
                     <svg class="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                 </a>
-                <div>
+                <div class="flex-1">
                     <div class="flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">
                         <svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M4 4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4z"></path></svg>
                         Folder Tag
                     </div>
-                    <h1 class="text-2xl md:text-3xl font-bold text-slate-900 font-heading capitalize"><?php echo htmlspecialchars($current_tag_name); ?></h1>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-2xl md:text-3xl font-bold text-slate-900 font-heading capitalize"><?php echo htmlspecialchars($current_tag_name); ?></h1>
+                        <button onclick="editTagFolder('<?php echo $tag_id; ?>', '<?php echo htmlspecialchars($current_tag_name, ENT_QUOTES); ?>')" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Folder">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -215,9 +289,8 @@ if ($view_mode === 'detail') {
                 <?php if($papers->num_rows > 0): ?>
                     <?php while($row = $papers->fetch_assoc()): ?>
                         <?php 
-                            // Prepare Variables for Popup (updated for new fields & json author)
                             $js_title = htmlspecialchars($row['title'], ENT_QUOTES); 
-                            $js_author_raw = htmlspecialchars($row['author'], ENT_QUOTES); // Pass raw JSON to JS
+                            $js_author_raw = htmlspecialchars($row['author'], ENT_QUOTES); 
                             $js_doi = htmlspecialchars($row['doi'] ?? '', ENT_QUOTES); 
                             $js_link_paper = htmlspecialchars($row['link_paper'] ?? '', ENT_QUOTES); 
                             $js_link_upload = htmlspecialchars($row['link_upload'] ?? '', ENT_QUOTES); 
@@ -231,7 +304,7 @@ if ($view_mode === 'detail') {
                             
                             $has_pdf = !empty($row['link_upload']);
 
-                            // Handle Author Display (Card View)
+                            // Handle Author Display
                             $rawAuthor = $row['author'];
                             $authorsArray = json_decode($rawAuthor, true);
                             $authorDisplay = "";
@@ -330,6 +403,23 @@ if ($view_mode === 'detail') {
 
     </div>
 
+    <div id="formEditTag" class="hidden">
+        <form method="POST" action="" class="space-y-4">
+            <input type="hidden" name="action_type" value="update_tag">
+            <input type="hidden" name="tag_id" id="editTagId">
+            
+            <div>
+                <label class="block text-slate-500 text-xs font-bold uppercase tracking-wider mb-2 font-heading">Nama Folder</label>
+                <input type="text" name="tag_name" id="editTagName" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition text-sm font-body">
+            </div>
+
+            <div class="pt-2 flex gap-3">
+                <button type="button" onclick="confirmDeleteTag()" class="w-1/3 bg-red-100 text-red-600 font-bold py-3 rounded-xl text-sm font-heading hover:bg-red-200 transition">Hapus</button>
+                <button type="submit" class="w-2/3 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-600/20 text-sm font-heading">Simpan</button>
+            </div>
+        </form>
+    </div>
+
     <?php include 'custompopup.php'; ?>
 
     <script>
@@ -338,9 +428,53 @@ if ($view_mode === 'detail') {
         const menu = document.getElementById('mobile-menu');
         btn.addEventListener('click', () => { menu.classList.toggle('hidden'); });
 
+        document.addEventListener('DOMContentLoaded', function() {
+            const successAlert = document.getElementById('successAlert');
+            if (successAlert) { setTimeout(() => { successAlert.classList.remove('opacity-100'); successAlert.classList.add('opacity-0'); setTimeout(() => { successAlert.remove(); window.history.replaceState(null, null, window.location.pathname); }, 500); }, 3000); }
+        });
+
         function resetModalSize() {
             const modalPanel = document.getElementById('modalPanel');
             if(modalPanel) { modalPanel.classList.remove('sm:max-w-6xl'); modalPanel.classList.add('sm:max-w-lg'); }
+        }
+
+        // --- EDIT FOLDER FUNCTION ---
+        function editTagFolder(id, name) {
+            resetModalSize();
+            const modalTarget = document.getElementById('modalContent');
+            const formContent = document.getElementById('formEditTag').innerHTML;
+            document.getElementById('modalHeaderActions').innerHTML = '';
+            
+            modalTarget.innerHTML = formContent;
+            
+            // PERBAIKAN PENTING: Gunakan value assignment langsung ke elemen di dalam modalTarget
+            const inputId = modalTarget.querySelector('#editTagId');
+            const inputName = modalTarget.querySelector('#editTagName');
+            
+            if (inputId) inputId.value = id;
+            if (inputName) inputName.value = name;
+            
+            openModal('Edit Folder');
+        }
+
+        function confirmDeleteTag() {
+            // PERBAIKAN JS: Ambil ID dari form yang sedang aktif di dalam modal
+            // Menggunakan querySelector spesifik ke modalContent
+            const activeInput = document.querySelector('#modalContent #editTagId');
+            
+            if (!activeInput || !activeInput.value) {
+                alert("Error: ID Tag tidak ditemukan.");
+                return;
+            }
+            
+            const id = activeInput.value;
+
+            if(confirm('Yakin ingin menghapus folder ini? Item di dalamnya TIDAK akan terhapus.')) {
+                const form = document.createElement('form'); form.method = 'POST'; form.action = '';
+                const inputId = document.createElement('input'); inputId.type = 'hidden'; inputId.name = 'tag_id'; inputId.value = id;
+                const inputAction = document.createElement('input'); inputAction.type = 'hidden'; inputAction.name = 'action_type'; inputAction.value = 'delete_tag';
+                form.appendChild(inputId); form.appendChild(inputAction); document.body.appendChild(form); form.submit();
+            }
         }
 
         // --- COPY LOGIC ---
@@ -386,7 +520,6 @@ if ($view_mode === 'detail') {
             } catch(e) { authBib = authorRaw; authAPA = authorRaw; }
 
             const bibtex = `@article{${authBib.split(',')[0].toLowerCase().replace(/[^a-z]/g, '')}_${year},\n  title={${title}},\n  author={${authBib}},\n  journal={${journal}},\n  volume={${volume}},\n  pages={${pagesBib}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
-            
             const apaYear = year ? `(${year})` : '(n.d.)';
             const apaJournal = journal ? `<span class="italic">${journal}</span>` : '';
             const apaVol = volume ? `, <span class="italic">${volume}</span>` : '';
@@ -402,9 +535,7 @@ if ($view_mode === 'detail') {
 
             let metaHtml = `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Judul</label><p class="text-slate-800 font-medium text-lg leading-tight">${title}</p></div>`;
             metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${authAPA}</p></div>`;
-            
             if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal</label><p class="text-slate-800 font-medium text-sm">${journal} ${volume ? `Vol. ${volume}` : ''} ${pagesDisplay ? `pp. ${pagesDisplay}` : ''}</p></div>`;
-            
             if(abstract) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Abstract</label><p class="text-slate-600 font-body text-sm leading-relaxed text-justify bg-slate-50 p-3 rounded-lg border border-gray-100 max-h-40 overflow-y-auto">${abstract}</p></div>`;
 
             const citationHtml = `
