@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type']) && $_P
                     'url'       => $upload['url'],
                     'real_name' => $_FILES['pdf_file']['name'],
                     'title'     => $meta['title'] ?? '',
-                    'author'    => $meta['author'] ?? '', // Ini string biasa dari PDF, nanti JS yang handle
+                    'author'    => $meta['author'] ?? '', 
                     'doi'       => $meta['doi'] ?? '',
                     'journal'   => $meta['journal'] ?? '',
                     'year'      => $meta['year'] ?? '',
@@ -135,10 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = $_POST['paper_id'];
         $doi = $_POST['doi'];
         $title = $_POST['title'];
-        $authorJson = $_POST['authors_json']; // Ambil JSON string dari hidden input
+        $authorJson = $_POST['authors_json']; 
         $abstract = $_POST['abstract'];
         $volume = $_POST['volume'];
-        $pages = $_POST['pages'];
+        $p_start = $_POST['page_start']; // New
+        $p_end = $_POST['page_end'];     // New
         
         $link_paper = $_POST['link_paper'];
         $link_upload = $_POST['link_upload_final'];
@@ -158,8 +159,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $real_name_file = $res_old['real_name_file'];
         }
 
-        $stmt = $conn->prepare("UPDATE papers SET title=?, author=?, abstract=?, doi=?, link_paper=?, link_upload=?, real_name_file=?, journal_name=?, publish_year=?, volume=?, pages=?, publisher=? WHERE id=? AND user_email=?");
-        $stmt->bind_param("ssssssssssssis", $title, $authorJson, $abstract, $doi, $link_paper, $link_upload, $real_name_file, $journal, $year, $volume, $pages, $publisher, $id, $email);
+        $stmt = $conn->prepare("UPDATE papers SET title=?, author=?, abstract=?, doi=?, link_paper=?, link_upload=?, real_name_file=?, journal_name=?, publish_year=?, volume=?, page_start=?, page_end=?, publisher=? WHERE id=? AND user_email=?");
+        $stmt->bind_param("sssssssssssssis", $title, $authorJson, $abstract, $doi, $link_paper, $link_upload, $real_name_file, $journal, $year, $volume, $p_start, $p_end, $publisher, $id, $email);
         
         if ($stmt->execute()) {
             handleTags($conn, $id, $tags, $email, 'paper'); 
@@ -171,10 +172,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // CREATE
         $doi = $_POST['doi'];
         $title = $_POST['title'];
-        $authorJson = $_POST['authors_json']; // JSON String
+        $authorJson = $_POST['authors_json']; 
         $abstract = $_POST['abstract'];
         $volume = $_POST['volume'];
-        $pages = $_POST['pages'];
+        $p_start = $_POST['page_start']; // New
+        $p_end = $_POST['page_end'];     // New
 
         $link_paper = $_POST['link_paper'];
         $link_upload = $_POST['link_upload_final'];
@@ -190,11 +192,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($title)) $title = "Untitled Paper";
-        // Default author JSON jika kosong
         if (empty($authorJson) || $authorJson == '[]') $authorJson = json_encode([['first' => '', 'last' => 'Unknown Author']]);
 
-        $stmt = $conn->prepare("INSERT INTO papers (user_email, title, author, abstract, doi, link_paper, link_upload, real_name_file, journal_name, publish_year, volume, pages, publisher, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
-        $stmt->bind_param("sssssssssssss", $email, $title, $authorJson, $abstract, $doi, $link_paper, $link_upload, $real_name_file, $journal, $year, $volume, $pages, $publisher);
+        $stmt = $conn->prepare("INSERT INTO papers (user_email, title, author, abstract, doi, link_paper, link_upload, real_name_file, journal_name, publish_year, volume, page_start, page_end, publisher, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
+        $stmt->bind_param("ssssssssssssss", $email, $title, $authorJson, $abstract, $doi, $link_paper, $link_upload, $real_name_file, $journal, $year, $volume, $p_start, $p_end, $publisher);
         
         if ($stmt->execute()) {
             $new_id = $stmt->insert_id;
@@ -340,7 +341,6 @@ $result_archive = $stmt_archive->get_result();
 
     <?php
     function renderCard($row, $status) {
-        // Prepare JSON Data for JS
         $js_id = $row['id']; 
         $js_title = htmlspecialchars($row['title'], ENT_QUOTES); 
         $js_doi = htmlspecialchars($row['doi'], ENT_QUOTES); 
@@ -350,7 +350,11 @@ $result_archive = $stmt_archive->get_result();
         $js_journal = htmlspecialchars($row['journal_name'] ?? '', ENT_QUOTES);
         $js_year = htmlspecialchars($row['publish_year'] ?? '', ENT_QUOTES);
         $js_volume = htmlspecialchars($row['volume'] ?? '', ENT_QUOTES);
-        $js_pages = htmlspecialchars($row['pages'] ?? '', ENT_QUOTES);
+        
+        // Pass Page Start & End
+        $js_p_start = htmlspecialchars($row['page_start'] ?? '', ENT_QUOTES);
+        $js_p_end = htmlspecialchars($row['page_end'] ?? '', ENT_QUOTES);
+
         $js_publisher = htmlspecialchars($row['publisher'] ?? '', ENT_QUOTES);
         $js_abstract = htmlspecialchars($row['abstract'] ?? '', ENT_QUOTES);
         $js_tags = htmlspecialchars($row['tag_list'] ?? '', ENT_QUOTES);
@@ -359,10 +363,9 @@ $result_archive = $stmt_archive->get_result();
         $rawAuthor = $row['author'];
         $authorsArray = json_decode($rawAuthor, true);
         $authorDisplay = "";
-        $js_author_raw = htmlspecialchars($rawAuthor, ENT_QUOTES); // Kirim raw ke JS buat diedit
+        $js_author_raw = htmlspecialchars($rawAuthor, ENT_QUOTES); 
 
         if (json_last_error() === JSON_ERROR_NONE && is_array($authorsArray)) {
-            // Format: Doe, J., Smith, A.
             $tempArr = [];
             foreach($authorsArray as $au) {
                 $f = isset($au['first']) ? trim($au['first']) : '';
@@ -376,7 +379,6 @@ $result_archive = $stmt_archive->get_result();
             }
             $authorDisplay = implode(", ", $tempArr);
         } else {
-            // Legacy data support
             $authorDisplay = htmlspecialchars($rawAuthor);
         }
 
@@ -397,7 +399,7 @@ $result_archive = $stmt_archive->get_result();
             if(count($tags_arr) > 3) $tags_html .= '<span class="inline-block text-[10px] text-gray-400 font-bold px-1">+ '.(count($tags_arr)-3).'</span>';
         }
         ?>
-        <div onclick="showDetail('<?php echo $js_id; ?>', '<?php echo $js_title; ?>', '<?php echo $js_author_raw; ?>', '<?php echo $js_doi; ?>', '<?php echo $js_link_paper; ?>', '<?php echo $js_link_upload; ?>', '<?php echo $js_real_name; ?>', '<?php echo $js_journal; ?>', '<?php echo $js_year; ?>', '<?php echo $js_volume; ?>', '<?php echo $js_pages; ?>', '<?php echo $js_publisher; ?>', '<?php echo $js_abstract; ?>', '<?php echo $status; ?>', '<?php echo $js_tags; ?>')" 
+        <div onclick="showDetail('<?php echo $js_id; ?>', '<?php echo $js_title; ?>', '<?php echo $js_author_raw; ?>', '<?php echo $js_doi; ?>', '<?php echo $js_link_paper; ?>', '<?php echo $js_link_upload; ?>', '<?php echo $js_real_name; ?>', '<?php echo $js_journal; ?>', '<?php echo $js_year; ?>', '<?php echo $js_volume; ?>', '<?php echo $js_p_start; ?>', '<?php echo $js_p_end; ?>', '<?php echo $js_publisher; ?>', '<?php echo $js_abstract; ?>', '<?php echo $status; ?>', '<?php echo $js_tags; ?>')" 
              class="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 transition duration-300 group flex flex-col justify-between h-full p-4 font-mono cursor-pointer hover:-translate-y-1 <?php echo $opacityClass; ?>">
             
             <div class="flex justify-between items-start gap-3 mb-2">
@@ -420,7 +422,15 @@ $result_archive = $stmt_archive->get_result();
                 <?php echo $tags_html; ?>
             </div>
 
-            <div class="pt-3 border-t border-gray-50 mt-auto flex justify-between items-center"><span class="text-xs text-slate-400 block"><?php echo date('d M Y', strtotime($row['created_at'])); ?></span><span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Detail</span></div>
+            <div class="pt-3 border-t border-gray-50 mt-auto flex justify-between items-center">
+                <span class="text-xs text-slate-400 block"><?php echo date('d M Y', strtotime($row['created_at'])); ?></span>
+                
+                <?php if(!empty($row['publish_year'])): ?>
+                    <span class="text-[10px] bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold font-heading">
+                        <?php echo htmlspecialchars($row['publish_year']); ?>
+                    </span>
+                <?php endif; ?>
+            </div>
         </div>
         <?php
     }
@@ -527,7 +537,10 @@ $result_archive = $stmt_archive->get_result();
                 </div>
                 <div>
                     <label class="block text-slate-500 text-xs font-bold uppercase tracking-wider mb-2 font-heading">Pages</label>
-                    <input type="text" id="inputPages" name="pages" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition text-sm font-body" placeholder="ex: 100-112">
+                    <div class="flex gap-2">
+                        <input type="text" id="inputPageStart" name="page_start" class="w-1/2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition text-sm font-body" placeholder="Start">
+                        <input type="text" id="inputPageEnd" name="page_end" class="w-1/2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition text-sm font-body" placeholder="End">
+                    </div>
                 </div>
             </div>
 
@@ -620,7 +633,8 @@ $result_archive = $stmt_archive->get_result();
             const inputYear = modalTarget.querySelector('#inputYear'); 
             const inputPublisher = modalTarget.querySelector('#inputPublisher');
             const inputVolume = modalTarget.querySelector('#inputVolume');
-            const inputPages = modalTarget.querySelector('#inputPages');
+            const inputPageStart = modalTarget.querySelector('#inputPageStart');
+            const inputPageEnd = modalTarget.querySelector('#inputPageEnd');
 
             if (btnFetch) {
                 btnFetch.onclick = async function() {
@@ -637,7 +651,13 @@ $result_archive = $stmt_archive->get_result();
                         if (item['container-title'] && item['container-title'].length > 0) inputJournal.value = item['container-title'][0];
                         if (item.publisher) inputPublisher.value = item.publisher;
                         if (item.volume) inputVolume.value = item.volume;
-                        if (item.page) inputPages.value = item.page;
+                        
+                        // Parse Pages (e.g. 100-112)
+                        if (item.page) {
+                            const parts = item.page.split('-');
+                            inputPageStart.value = parts[0];
+                            if(parts.length > 1) inputPageEnd.value = parts[1];
+                        }
                         
                         let pubYear = '';
                         if (item['published-print'] && item['published-print']['date-parts']) pubYear = item['published-print']['date-parts'][0][0];
@@ -738,10 +758,8 @@ $result_archive = $stmt_archive->get_result();
                                     if(data.publisher) inputPublisher.value = data.publisher;
                                     
                                     // Handle Author String dari PDF (Split sederhana)
-                                    // PDF parser biasanya return string "John Doe, Jane Smith"
                                     clearAuthors();
                                     if(data.author) {
-                                        // Coba pisahkan berdasarkan koma
                                         const parts = data.author.split(',');
                                         parts.forEach(p => {
                                             const name = p.trim();
@@ -820,7 +838,7 @@ $result_archive = $stmt_archive->get_result();
         function confirmDelete(id, title) { document.getElementById('modalHeaderActions').innerHTML=''; const sTitle = title.replace(/'/g, "\\'"); document.getElementById('modalContent').innerHTML = `<div class="text-center p-4"><div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div><h3 class="text-xl font-bold text-slate-800 mb-2 font-heading">Hapus Permanen?</h3><p class="text-sm text-slate-500 mb-6 font-body">Yakin hapus <strong>${title}</strong>?</p><div class="flex gap-3 justify-center"><button onclick="closeModal()" class="px-5 py-2.5 bg-gray-100 text-slate-600 rounded-xl font-bold text-sm">Batal</button><button onclick="submitDelete('${id}')" class="px-5 py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm">Ya, Hapus</button></div></div>`; openModal('Konfirmasi Hapus'); }
         function submitDelete(id) { const form = document.createElement('form'); form.method='POST'; const i1=document.createElement('input');i1.type='hidden';i1.name='paper_id';i1.value=id; const i2=document.createElement('input');i2.type='hidden';i2.name='action_type';i2.value='delete'; form.appendChild(i1);form.appendChild(i2);document.body.appendChild(form);form.submit(); }
 
-        function editPaper(id, title, authorRaw, doi, link_paper, link_upload, real_name, journal, year, volume, pages, publisher, abstract, status, tags) { 
+        function editPaper(id, title, authorRaw, doi, link_paper, link_upload, real_name, journal, year, volume, p_start, p_end, publisher, abstract, status, tags) { 
             resetModalSize(); const modalTarget = document.getElementById('modalContent'); 
             modalTarget.innerHTML = document.getElementById('formSource').innerHTML; 
             document.getElementById('modalHeaderActions').innerHTML = ''; 
@@ -835,20 +853,18 @@ $result_archive = $stmt_archive->get_result();
             modalTarget.querySelector('#inputJournal').value = journal;
             modalTarget.querySelector('#inputYear').value = year;
             modalTarget.querySelector('#inputVolume').value = volume;
-            modalTarget.querySelector('#inputPages').value = pages;
+            modalTarget.querySelector('#inputPageStart').value = p_start;
+            modalTarget.querySelector('#inputPageEnd').value = p_end;
             modalTarget.querySelector('#inputPublisher').value = publisher;
             modalTarget.querySelector('#inputAbstract').value = abstract;
             
             // Set Authors
             clearAuthors();
             try {
-                // authorRaw dikirim sebagai JSON string atau string biasa
-                // Cek apakah JSON
                 if (authorRaw.startsWith('[') || authorRaw.startsWith('{')) {
                     const auths = JSON.parse(authorRaw);
                     auths.forEach(a => addAuthorRow(a.first, a.last));
                 } else {
-                    // Legacy text
                     addAuthorRow('', authorRaw);
                 }
             } catch(e) {
@@ -882,20 +898,31 @@ $result_archive = $stmt_archive->get_result();
         
         function copyCode(btn) { navigator.clipboard.writeText(btn.nextElementSibling.innerText).then(() => { const original = btn.innerHTML; btn.innerHTML = `<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`; setTimeout(() => { btn.innerHTML = original; }, 2000); }); }
         
-        function showDetail(id, title, authorRaw, doi, link_paper, link_upload, real_name, journal, year, volume, pages, publisher, abstract, status, tags) {
+        function showDetail(id, title, authorRaw, doi, link_paper, link_upload, real_name, journal, year, volume, p_start, p_end, publisher, abstract, status, tags) {
             resetModalSize();
             const headerActions = document.getElementById('modalHeaderActions');
-            // Escape quotes for function arguments
-            const sTitle = title.replace(/'/g, "\\'"); const sDoi = doi.replace(/'/g, "\\'"); const sLink = link_paper.replace(/'/g, "\\'"); const sUpload = link_upload.replace(/'/g, "\\'"); const sReal = real_name.replace(/'/g, "\\'"); const sJournal = journal.replace(/'/g, "\\'"); const sYear = year.replace(/'/g, "\\'"); const sVol = volume.replace(/'/g, "\\'"); const sPage = pages.replace(/'/g, "\\'"); const sPub = publisher.replace(/'/g, "\\'"); const sAbs = abstract.replace(/'/g, "\\'").replace(/\n/g, "\\n"); const sTags = tags.replace(/'/g, "\\'");
-            // Author Raw perlu di escape special char nya karena JSON string
+            // Escape quotes
+            const sTitle = title.replace(/'/g, "\\'"); const sDoi = doi.replace(/'/g, "\\'"); const sLink = link_paper.replace(/'/g, "\\'"); const sUpload = link_upload.replace(/'/g, "\\'"); const sReal = real_name.replace(/'/g, "\\'"); const sJournal = journal.replace(/'/g, "\\'"); const sYear = year.replace(/'/g, "\\'"); const sVol = volume.replace(/'/g, "\\'"); 
+            const sStart = p_start.replace(/'/g, "\\'"); const sEnd = p_end.replace(/'/g, "\\'");
+            const sPub = publisher.replace(/'/g, "\\'"); const sAbs = abstract.replace(/'/g, "\\'").replace(/\n/g, "\\n"); const sTags = tags.replace(/'/g, "\\'");
             const sAuthor = authorRaw.replace(/'/g, "\\'").replace(/"/g, '&quot;'); 
 
             if(headerActions) {
-                let btns = `<button onclick="editPaper('${id}', '${sTitle}', '${sAuthor}', '${sDoi}', '${sLink}', '${sUpload}', '${sReal}', '${sJournal}', '${sYear}', '${sVol}', '${sPage}', '${sPub}', '${sAbs}', '${status}', '${sTags}')" class="p-2 text-slate-400 hover:text-blue-600 transition rounded-full hover:bg-blue-50" title="Edit"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>`;
+                let btns = `<button onclick="editPaper('${id}', '${sTitle}', '${sAuthor}', '${sDoi}', '${sLink}', '${sUpload}', '${sReal}', '${sJournal}', '${sYear}', '${sVol}', '${sStart}', '${sEnd}', '${sPub}', '${sAbs}', '${status}', '${sTags}')" class="p-2 text-slate-400 hover:text-blue-600 transition rounded-full hover:bg-blue-50" title="Edit"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>`;
                 if (status === 'active') btns = `<button onclick="submitArchive('${id}')" class="p-2 text-slate-400 hover:text-amber-600 transition rounded-full hover:bg-amber-50" title="Arsipkan"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg></button>` + btns;
                 else btns = `<button onclick="submitRestore('${id}')" class="p-2 text-slate-400 hover:text-green-600 transition rounded-full hover:bg-green-50" title="Pulihkan"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg></button>` + btns;
                 headerActions.innerHTML = btns;
             }
+
+            // Format Pages
+            let pagesDisplay = "";
+            if(p_start && p_end) pagesDisplay = `${p_start}-${p_end}`;
+            else if(p_start) pagesDisplay = p_start;
+            
+            // Format BibTeX Pages (pake --)
+            let pagesBib = "";
+            if(p_start && p_end) pagesBib = `${p_start}--${p_end}`;
+            else if(p_start) pagesBib = p_start;
 
             // Format Authors untuk Bibtex & APA
             let authBib = "Unknown";
@@ -903,9 +930,7 @@ $result_archive = $stmt_archive->get_result();
             try {
                 if (authorRaw.startsWith('[') || authorRaw.startsWith('{')) {
                     const parsed = JSON.parse(authorRaw);
-                    // Bibtex: Last, First and Last, First
                     authBib = parsed.map(a => `${a.last}, ${a.first}`).join(' and ');
-                    // APA: Last, F. & Last, F.
                     authAPA = parsed.map(a => {
                         const init = a.first ? a.first[0] + '.' : '';
                         return `${a.last}, ${init}`;
@@ -916,12 +941,12 @@ $result_archive = $stmt_archive->get_result();
                 }
             } catch(e) { authBib = authorRaw; authAPA = authorRaw; }
 
-            const bibtex = `@article{${authBib.split(',')[0].toLowerCase().replace(/[^a-z]/g, '')}_${year},\n  title={${title}},\n  author={${authBib}},\n  journal={${journal}},\n  volume={${volume}},\n  pages={${pages}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
+            const bibtex = `@article{${authBib.split(',')[0].toLowerCase().replace(/[^a-z]/g, '')}_${year},\n  title={${title}},\n  author={${authBib}},\n  journal={${journal}},\n  volume={${volume}},\n  pages={${pagesBib}},\n  year={${year}},\n  publisher={${publisher}},\n  doi={${doi}},\n  url={${link_paper || link_upload}}\n}`;
             
             const apaYear = year ? `(${year})` : '(n.d.)';
             const apaJournal = journal ? `<span class="italic">${journal}</span>` : '';
             const apaVol = volume ? `, <span class="italic">${volume}</span>` : '';
-            const apaPage = pages ? `, ${pages}` : '';
+            const apaPage = pagesDisplay ? `, ${pagesDisplay}` : '';
             const apaDoi = doi ? ` https://doi.org/${doi}` : (link_paper ? ` ${link_paper}` : '');
             const apaText = `${authAPA} ${apaYear}. ${title}. ${apaJournal}${apaVol}${apaPage}.${apaDoi}`;
 
@@ -944,7 +969,7 @@ $result_archive = $stmt_archive->get_result();
             let metaHtml = `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Judul</label><p class="text-slate-800 font-medium text-lg leading-tight">${title}</p></div>`;
             metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Penulis</label><p class="text-slate-800 font-medium text-sm">${authAPA}</p></div>`;
             
-            if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal</label><p class="text-slate-800 font-medium text-sm">${journal} ${volume ? `Vol. ${volume}` : ''} ${pages ? `pp. ${pages}` : ''}</p></div>`;
+            if(journal) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Jurnal</label><p class="text-slate-800 font-medium text-sm">${journal} ${volume ? `Vol. ${volume}` : ''} ${pagesDisplay ? `pp. ${pagesDisplay}` : ''}</p></div>`;
             
             if(abstract) metaHtml += `<div><label class="block text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1 font-heading">Abstract</label><p class="text-slate-600 font-body text-sm leading-relaxed text-justify bg-slate-50 p-3 rounded-lg border border-gray-100 max-h-40 overflow-y-auto">${abstract}</p></div>`;
 
