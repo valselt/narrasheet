@@ -125,13 +125,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// --- 4. AMBIL DATA ---
+// --- 4. AMBIL DATA & SORTING ---
+$sortOption = $_GET['sort'] ?? 'newest'; // Default
+
+$orderBy = match ($sortOption) {
+    'oldest'   => 'd.created_at ASC',
+    'title_az' => 'd.nama_dataset ASC',
+    'platform' => 'd.jenis_dataset ASC',
+    default    => 'd.created_at DESC' // 'newest'
+};
+
 $sql_base = "SELECT d.*, GROUP_CONCAT(t.tag_name) as tag_list 
              FROM datasets d 
              LEFT JOIN dataset_tags dt ON d.id = dt.dataset_id 
              LEFT JOIN tags t ON dt.tag_id = t.id 
              WHERE d.user_email = ? AND d.status = ? 
-             GROUP BY d.id ORDER BY d.created_at DESC";
+             GROUP BY d.id ORDER BY $orderBy";
 
 $stmt_active = $conn->prepare($sql_base);
 $status_active = 'active';
@@ -225,7 +234,21 @@ $result_archive = $stmt_archive->get_result();
                 <p class="text-slate-500 text-sm mt-1 font-body">Kelola koleksi dataset penelitian Anda.</p>
             </div>
             
-            <div class="flex gap-3 w-full md:w-auto">
+            <div class="flex flex-wrap gap-3 w-full md:w-auto items-center">
+                <div class="relative group">
+                    <button class="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-50 transition shadow-sm">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                        <span>Urutkan</span>
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div class="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform origin-top-right">
+                        <a href="?sort=newest" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'newest') ? 'bg-blue-50 text-blue-600' : ''; ?>">Terbaru Ditambahkan</a>
+                        <a href="?sort=oldest" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'oldest') ? 'bg-blue-50 text-blue-600' : ''; ?>">Terlama Ditambahkan</a>
+                        <a href="?sort=title_az" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'title_az') ? 'bg-blue-50 text-blue-600' : ''; ?>">Nama (A-Z)</a>
+                        <a href="?sort=platform" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'platform') ? 'bg-blue-50 text-blue-600' : ''; ?>">Platform (A-Z)</a>
+                    </div>
+                </div>
+
                 <button onclick="openArchiveModal()" class="flex-1 md:flex-none justify-center group flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-5 py-2.5 rounded-xl transition shadow-sm hover:shadow-md hover:-translate-y-0.5">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                     <span class="font-bold text-sm font-heading">Arsip (<?php echo $result_archive->num_rows; ?>)</span>
@@ -562,17 +585,20 @@ $result_archive = $stmt_archive->get_result();
                 const match = link.match(/huggingface\.co\/datasets\/([^\/]+\/[^\/?]+)/);
                 if (match && match[1]) {
                     const datasetId = match[1];
-                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-50 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`;
+                    caraPakaiHtml = `<div class="mt-6 pt-4 border-t border-gray-100"><h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-heading">Cara Menggunakan (Hugging Face)</h4><div class="relative group bg-slate-900 rounded-xl overflow-hidden"><button onclick="copyCode(this)" class="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-slate-300 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg></button><pre class="p-4 text-slate-5 text-xs font-mono overflow-x-auto leading-relaxed"><code>from datasets import load_dataset\ndataset = load_dataset("${datasetId}")\nprint(dataset)</code></pre></div></div>`;
                 }
             }
             
             // Generate HTML for tags in detail view
             let tagsDetailHtml = '';
             if(tags) {
-                const tagsArr = tags.split(', ');
+                // PERBAIKAN DI SINI: Hapus spasi setelah koma
+                const tagsArr = tags.split(','); 
+                
                 tagsDetailHtml = '<div class="flex flex-wrap gap-2 mt-2">';
                 tagsArr.forEach(t => {
-                     tagsDetailHtml += `<span class="bg-blue-50 text-blue-600 text-xs px-2.5 py-1 rounded-md font-bold uppercase tracking-wide border border-blue-100">${t}</span>`;
+                     // Tambahkan .trim() untuk membersihkan spasi yang mungkin tersisa
+                     tagsDetailHtml += `<span class="bg-blue-50 text-blue-600 text-xs px-2.5 py-1 rounded-md font-bold uppercase tracking-wide border border-blue-100">${t.trim()}</span>`;
                 });
                 tagsDetailHtml += '</div>';
             }

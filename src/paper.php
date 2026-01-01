@@ -206,13 +206,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// --- 5. AMBIL DATA ---
+// --- 5. AMBIL DATA & SORTING ---
+$sortOption = $_GET['sort'] ?? 'newest'; // Default: newest
+
+// Tentukan query ORDER BY berdasarkan pilihan sort
+$orderBy = match ($sortOption) {
+    'oldest' => 'p.created_at ASC',
+    'title_az' => 'p.title ASC',
+    'year_desc' => 'p.publish_year DESC',
+    'year_asc' => 'p.publish_year ASC',
+    default => 'p.created_at DESC' // 'newest'
+};
+
 $sql_base = "SELECT p.*, GROUP_CONCAT(t.tag_name) as tag_list 
              FROM papers p 
              LEFT JOIN paper_tags pt ON p.id = pt.paper_id 
              LEFT JOIN tags t ON pt.tag_id = t.id 
              WHERE p.user_email = ? AND p.status = ? 
-             GROUP BY p.id ORDER BY p.created_at DESC";
+             GROUP BY p.id ORDER BY $orderBy";
 
 $stmt_active = $conn->prepare($sql_base);
 $status_active = 'active';
@@ -303,7 +314,22 @@ $result_archive = $stmt_archive->get_result();
                 <p class="text-slate-500 text-sm mt-1 font-body">Koleksi referensi penelitian dan literatur.</p>
             </div>
             
-            <div class="flex gap-3 w-full md:w-auto">
+            <div class="flex flex-wrap gap-3 w-full md:w-auto items-center">
+                <div class="relative group">
+                    <button class="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-50 transition shadow-sm">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                        <span>Urutkan</span>
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div class="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform origin-top-right">
+                        <a href="?sort=newest" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'newest') ? 'bg-blue-50 text-blue-600' : ''; ?>">Terbaru Ditambahkan</a>
+                        <a href="?sort=oldest" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'oldest') ? 'bg-blue-50 text-blue-600' : ''; ?>">Terlama Ditambahkan</a>
+                        <a href="?sort=title_az" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'title_az') ? 'bg-blue-50 text-blue-600' : ''; ?>">Judul (A-Z)</a>
+                        <a href="?sort=year_desc" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'year_desc') ? 'bg-blue-50 text-blue-600' : ''; ?>">Tahun (Terbaru)</a>
+                        <a href="?sort=year_asc" class="block px-4 py-3 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-600 font-medium <?php echo ($sortOption == 'year_asc') ? 'bg-blue-50 text-blue-600' : ''; ?>">Tahun (Terlama)</a>
+                    </div>
+                </div>
+
                 <button onclick="openArchiveModal()" class="flex-1 md:flex-none justify-center group flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-5 py-2.5 rounded-xl transition shadow-sm hover:shadow-md hover:-translate-y-0.5">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                     <span class="font-bold text-sm font-heading">Arsip (<?php echo $result_archive->num_rows; ?>)</span>

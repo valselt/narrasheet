@@ -5,11 +5,12 @@ php_value max_execution_time 300
 
 RewriteEngine On
 
-# 1. Jika request adalah folder, biarkan (jangan diubah)
+# 1. Jika request adalah folder, biarkan
 RewriteCond %{REQUEST_FILENAME} !-d
 
 # 2. Cek apakah file dengan ekstensi .php ada
 RewriteCond %{REQUEST_FILENAME}.php -f
 
-# 3. Rewrite request tanpa ekstensi ke file .php yang sesuai
-RewriteRule ^(.*)$ $1.php [L]
+# 3. Rewrite request ke file .php
+# Tambahkan [QSA] agar ?sort=... ikut terbawa
+RewriteRule ^(.*)$ $1.php [QSA,L]
