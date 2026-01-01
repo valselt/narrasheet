@@ -1,5 +1,14 @@
 <?php
-require 'vendor/autoload.php'; 
+// Pastikan path vendor benar
+$vendorPath = __DIR__ . '/vendor/autoload.php';
+if (file_exists($vendorPath)) {
+    require $vendorPath;
+} else {
+    header('Content-Type: application/json');
+    echo json_encode(['status' => false, 'message' => 'Vendor/Autoload tidak ditemukan. Jalankan composer install.']);
+    exit;
+}
+
 require_once 'config.php';
 
 use Aws\S3\S3Client;
@@ -7,7 +16,6 @@ use Aws\Exception\AwsException;
 use Smalot\PdfParser\Parser;
 
 function uploadToMinio($file, $username) {
-    // ... (Kode upload sama seperti sebelumnya, tidak berubah) ...
     $allowed = ['pdf'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     
@@ -52,9 +60,9 @@ function uploadToMinio($file, $username) {
     }
 }
 
-// --- FUNGSI EKSTRAKSI METADATA LENGKAP ---
+// --- FUNGSI UTAMA: SMART EXTRACT (MENDELEY STYLE) ---
 function extractPdfData($filePath) {
-    // Siapkan array data lengkap
+    // Struktur default kosong
     $data = [
         'title' => null, 
         'author' => null, 
@@ -68,62 +76,127 @@ function extractPdfData($filePath) {
         $parser = new Parser();
         $pdf = $parser->parseFile($filePath);
         $pages = $pdf->getPages();
+        // Ambil teks dari halaman 1 (biasanya judul/doi ada di sini)
         $text = isset($pages[0]) ? $pages[0]->getText() : '';
-
-        // 1. CARI DOI
-        if (preg_match('/(10\.\d{4,9}\/[-._;()\/:\w]+)/', $text, $matches)) {
-            $doi = rtrim(trim($matches[1]), ".");
-            $data['doi'] = $doi;
+        
+        // --- STRATEGI 1: CARI DOI DI TEXT (AKURASI TINGGI) ---
+        // Regex DOI yang lebih robust (menangkap format standard & url)
+        if (preg_match('/10\.\d{4,9}\/[-._;()\/:\w]+/', $text, $matches)) {
+            $doiCandidates = $matches[0];
+            // Bersihkan trailing punctuation (kadang titik di akhir kalimat ikut)
+            $doi = rtrim($doiCandidates, ".,;");
             
-            // Tembak Crossref
-            $crossref = @file_get_contents("https://api.crossref.org/works/" . urlencode($doi), false, stream_context_create(["http" => ["timeout" => 4]]));
-            
-            if ($crossref) {
-                $json = json_decode($crossref, true);
-                if (isset($json['message'])) {
-                    $msg = $json['message'];
-                    
-                    // Ambil Judul
-                    $data['title'] = $msg['title'][0] ?? null;
-                    
-                    // Ambil Penulis (Gabung semua)
-                    if (isset($msg['author'])) {
-                        $authors = array_map(function($a) {
-                            return ($a['given'] ?? '') . ' ' . ($a['family'] ?? '');
-                        }, $msg['author']); // Ambil semua penulis, jangan dilimit
-                        $data['author'] = implode(', ', $authors);
-                    }
-
-                    // Ambil Nama Jurnal (Container Title)
-                    $data['journal'] = $msg['container-title'][0] ?? null;
-
-                    // Ambil Penerbit
-                    $data['publisher'] = $msg['publisher'] ?? null;
-
-                    // Ambil Tahun Terbit (Cek published-print, lalu published-online, lalu created)
-                    if (isset($msg['published-print']['date-parts'][0][0])) {
-                        $data['year'] = $msg['published-print']['date-parts'][0][0];
-                    } elseif (isset($msg['published-online']['date-parts'][0][0])) {
-                        $data['year'] = $msg['published-online']['date-parts'][0][0];
-                    } elseif (isset($msg['created']['date-parts'][0][0])) {
-                        $data['year'] = $msg['created']['date-parts'][0][0];
-                    }
-
-                    return $data; // Return data lengkap dari Crossref
-                }
+            $apiData = fetchCrossrefMetadata($doi, 'doi');
+            if ($apiData) {
+                return array_merge($data, $apiData);
             }
         }
 
-        // 2. FALLBACK METADATA INTERNAL PDF (Jika Crossref Gagal)
+        // --- STRATEGI 2: TITLE SEARCH (SEARCH QUERY) ---
+        // Jika DOI tidak ketemu, kita ambil "potongan teks awal" yang bersih
+        // lalu kita "Tanya" ke Crossref: "Apakah kamu punya paper dengan judul mirip teks ini?"
+        $cleanText = cleanTextForSearch($text);
+        
+        if (strlen($cleanText) > 10) {
+            // Cari di Crossref menggunakan query bibliographic
+            $apiData = fetchCrossrefMetadata($cleanText, 'query');
+            if ($apiData) {
+                return array_merge($data, $apiData);
+            }
+        }
+
+        // --- STRATEGI 3: FALLBACK INTERNAL PDF (AKURASI RENDAH) ---
+        // Dipakai hanya jika Strategi 1 & 2 gagal total
         $details = $pdf->getDetails();
-        // ... (Logika fallback sederhana sama seperti sebelumnya) ...
         if (!empty($details['Title'])) $data['title'] = $details['Title'];
         if (!empty($details['Author'])) $data['author'] = $details['Author'];
 
     } catch (Exception $e) {
-        // Fail silent
+        // Fail silent, return data kosong
     }
     
     return $data;
 }
-?>
+
+// --- HELPER: BERSIHKAN TEKS UNTUK PENCARIAN ---
+function cleanTextForSearch($rawText) {
+    // Ambil 300 karakter pertama saja (biasanya judul ada di awal)
+    $headText = substr($rawText, 0, 300);
+    
+    // Hapus baris baru dan tab
+    $headText = str_replace(["\n", "\r", "\t"], " ", $headText);
+    
+    // Hapus karakter aneh / non-alphanumeric dasar
+    $headText = preg_replace('/[^a-zA-Z0-9\s\-\.,:]/', '', $headText);
+    
+    // Hapus kata-kata "sampah" yang sering muncul di header jurnal
+    $removeWords = ['Available online', 'ScienceDirect', 'Procedia', 'Journal of', 'ISSN', 'Vol.', 'No.', 'pp.', 'www.', 'http'];
+    $headText = str_ireplace($removeWords, '', $headText);
+    
+    // Hapus spasi ganda
+    return trim(preg_replace('/\s+/', ' ', $headText));
+}
+
+// --- HELPER: REQUEST KE CROSSREF API ---
+function fetchCrossrefMetadata($query, $type = 'doi') {
+    $url = "";
+    
+    if ($type === 'doi') {
+        $url = "https://api.crossref.org/works/" . urlencode($query);
+    } else {
+        // Search query mode (seperti search bar)
+        // Kita limit 1 hasil paling relevan
+        $url = "https://api.crossref.org/works?query.bibliographic=" . urlencode($query) . "&rows=1";
+    }
+
+    // Gunakan context stream untuk timeout handling
+    $context = stream_context_create([
+        "http" => [
+            "timeout" => 5, // Timeout 5 detik agar tidak loading lama
+            "header" => "User-Agent: Narrasheet/1.0 (mailto:admin@ivanaldorino.web.id)" // Etika API: Beritahu siapa kita
+        ]
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+    
+    if ($response) {
+        $json = json_decode($response, true);
+        
+        // Handle response beda antara DOI (langsung item) dan Query (list items)
+        $item = null;
+        if ($type === 'doi' && isset($json['message'])) {
+            $item = $json['message'];
+        } elseif ($type === 'query' && isset($json['message']['items'][0])) {
+            $item = $json['message']['items'][0];
+        }
+
+        if ($item) {
+            $extracted = [];
+            $extracted['title'] = $item['title'][0] ?? null;
+            $extracted['doi']   = $item['DOI'] ?? null;
+            $extracted['journal'] = $item['container-title'][0] ?? null;
+            $extracted['publisher'] = $item['publisher'] ?? null;
+            
+            // Ambil Tahun
+            if (isset($item['published-print']['date-parts'][0][0])) {
+                $extracted['year'] = $item['published-print']['date-parts'][0][0];
+            } elseif (isset($item['published-online']['date-parts'][0][0])) {
+                $extracted['year'] = $item['published-online']['date-parts'][0][0];
+            } elseif (isset($item['created']['date-parts'][0][0])) {
+                $extracted['year'] = $item['created']['date-parts'][0][0];
+            }
+            
+            // Ambil Penulis
+            if (isset($item['author'])) {
+                $authors = array_map(function($a) {
+                    return ($a['given'] ?? '') . ' ' . ($a['family'] ?? '');
+                }, $item['author']);
+                $extracted['author'] = implode(', ', $authors);
+            }
+
+            return $extracted;
+        }
+    }
+    
+    return null;
+}
