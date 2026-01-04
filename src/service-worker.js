@@ -1,5 +1,5 @@
 // GANTI VERSI INI SETIAP ADA PERUBAHAN FILE (misal: v2, v3, dst)
-const CACHE_NAME = 'narrasheet-v2';
+const CACHE_NAME = 'narrasheet-v3';
 
 const urlsToCache = [
   './',
